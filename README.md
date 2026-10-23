@@ -194,9 +194,12 @@ checks. The research backlog is tracked in
 ### Publishing the writeup
 
 `writeup/index.html` is a self-contained static page with hash routing; it does
-not need a build step. On Cloudflare Pages, set the build output directory to
-`writeup` and leave the build command empty. [`writeup/_headers`](writeup/_headers)
-adds baseline security headers for Pages and Workers static assets.
+not need a build step. The repository includes [`wrangler.jsonc`](wrangler.jsonc),
+which serves `writeup/` as Workers static assets. In a Workers Builds project,
+set the build command to `exit 0` and the deploy command to
+`npx wrangler deploy`. For Cloudflare Pages instead, use `writeup` as the build
+output directory with no build command. [`writeup/_headers`](writeup/_headers)
+adds baseline security headers in both setups.
 
 ## Manual lab
 
