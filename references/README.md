@@ -11,6 +11,9 @@ validate the harness.
 | [fix-commit-3584a98bda](fix-commit-3584a98bda.md) | Upstream fix commit metadata and design |
 | [public-poc-9bie](public-poc-9bie.md) | Pinned public PoC, calibration, licensing |
 | [lab-verification](lab-verification.md) | What this repository reproduced on which image |
+| [8.5-rce-research-log](8.5-rce-research-log.md) | Consolidated 8.5 Phase 0/1 + FPM + heap-grooming log |
+| [8.5-rce-instrumentation](8.5-rce-instrumentation.md) | mod_php Phase 0/1 measurements and fake-array proof |
+| [8.5-fpm-instrumentation](8.5-fpm-instrumentation.md) | FPM pre-startup pivot and groom results |
 
 Advisory URLs:
 

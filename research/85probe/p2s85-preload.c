@@ -372,7 +372,10 @@ void zval_ptr_dtor(void *p)
 		}
 		if (mode_fake) {
 			if (type == 7 && value > 0x10000) {
-				uintptr_t zif = libphp_base() + P2S_ZIF_SYSTEM_OFF;
+				const char *env_zif = getenv("P2S85_ZIF");
+				uintptr_t zif = env_zif
+					? (uintptr_t) strtoull(env_zif, NULL, 0)
+					: libphp_base() + P2S_ZIF_SYSTEM_OFF;
 				uintptr_t s = build_fake(zif);
 				z[0] = s;
 				z[1] = (z[1] & ~(uint64_t) 0xff) | 7; /* IS_ARRAY */

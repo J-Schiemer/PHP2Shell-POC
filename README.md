@@ -167,14 +167,27 @@ and the matching configuration.
 ## Roadmap
 
 The 8.5 fatal-backtrace path currently ships as a crash/UAF oracle. Phase 0/1
-instrumentation (2026-10-23) confirmed a stable stale-array offset
-(`chunk+0x5a150` on the debug image), showed that the mod_php consumer does
-**not** reclaim the slot before the dtor, and produced an in-process fake-array
-proof that reaches `zif_system`. That proof is instrumentation-only; the
-no-instrumentation remote chain is still open. Details and evidence:
-[`references/8.5-rce-instrumentation.md`](references/8.5-rce-instrumentation.md).
-The research backlog is tracked in [`TODO-8.5-RCE.md`](TODO-8.5-RCE.md); the
-validated 8.4 RCE chain and the 8.5 crash oracle remain the supported checks.
+established a stable mod_php offset, showed that the consumer does **not**
+reclaim the slot before the dtor, and produced an in-process fake-array proof
+that reaches `zif_system`. The FPM pivot confirmed the pre-startup
+`PHP_VALUE`/`Authorization` window and found a binary-controlled 56-byte
+allocation. A producer-side auth groom moves the backtrace to the low 56-byte
+page, but the consumer allocation still lands at slot 0 while the producer
+array is at slot 6/7; the FastCGI 65 KB param cap blocks the large-payload
+alternative. The remote chain is therefore blocked, not merely uncalibrated.
+
+Full details:
+
+- [`references/8.5-rce-research-log.md`](references/8.5-rce-research-log.md) —
+  consolidated log, grooming attempts, and the structural blocker
+- [`references/8.5-rce-instrumentation.md`](references/8.5-rce-instrumentation.md) —
+  mod_php Phase 0/1
+- [`references/8.5-fpm-instrumentation.md`](references/8.5-fpm-instrumentation.md) —
+  FPM pivot
+
+The validated 8.4 RCE chain and the 8.5 crash oracle remain the supported
+checks. The research backlog is tracked in
+[`TODO-8.5-RCE.md`](TODO-8.5-RCE.md).
 
 ## Manual lab
 

