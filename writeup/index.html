@@ -647,11 +647,14 @@
 
           <div class="story">
             <div class="layer-tag">The story <span class="hint">ELI5 · continuous allegory</span></div>
-            <p>Hotel Zend is open all night. In this lab it has exactly <strong>one night clerk</strong>: Mira. She works at <strong>Desk 7</strong>, and she handles <strong>one guest at a time</strong>. Every guest is an HTTP request.</p>
-            <p>The <strong>Blotter</strong> is the stack of scratch paper Mira uses for the guest in front of her. It is huge, it is temporary, and at checkout it is swept clean.</p>
-            <p>The <strong>Ledger</strong> is the little notebook in her pocket. It survives every checkout. When Mira needs to remember something between guests — a session, an error, a setting — she writes a line in the Ledger.</p>
-            <p>There is also a <strong>Session Drawer</strong> for coat-check tickets, a <strong>Pink Slip</strong> for the last fatal complaint, and an <strong>Inspector</strong> who arrives to test whether the hotel has really fixed its lock.</p>
-            <p>The rule that matters is simple: <strong>the Ledger outlives the Blotter.</strong> If Mira writes down an address and forgets to erase it, the next guest can make her read from a page that no longer exists. Sometimes that page still looks like a page. Sometimes it says <em>“run this.”</em></p>
+            <p>Hotel Zend is open all night. In this lab it has exactly <strong>one night clerk</strong>: Mira. She works at <strong>Desk 7</strong>, and she handles <strong>one guest at a time</strong>. Every guest is an HTTP request; Mira is the worker process that serves it.</p>
+            <p>Mira has two kinds of paper, and they behave very differently.</p>
+            <p>The <strong>Blotter</strong> is the stack of scratch paper Mira uses for the guest in front of her. It is huge, cheap, and temporary. She writes on it while the guest is there, and at checkout it is swept clean so the next guest can use the same paper. In code, the Blotter is the request's memory: the heap the engine fills while one request runs.</p>
+            <p>The <strong>Ledger</strong> is the little notebook in her pocket. It survives every checkout. When Mira needs to remember something between guests — a session, an error, a setting — she writes a line in the Ledger. Most lines look like an address: <em>“the guest's session folder is on page 12.”</em> In code, the Ledger is the worker's persistent state: the globals that outlive a request.</p>
+            <p>That is the whole setup, and one rule matters: <strong>the Ledger outlives the Blotter.</strong></p>
+            <p>Now the problem. Suppose Mira writes “the guest's folder is on page 12,” and then the Blotter is wiped. The note still says page 12. That page has been erased, reused, or handed to someone else — and Mira has no way to tell. She trusts her own handwriting, because a Ledger line is supposed to be trustworthy.</p>
+            <p>So the next guest asks a small question, Mira looks up the old line, and follows it. If the page is blank, she reads nothing. If it has been reused, she may read the next guest's private data. If it contains something shaped like an instruction, she may follow it. That last case is how a memory-safety bug turns into command execution.</p>
+            <p>There is also a <strong>Session Drawer</strong> for coat-check tickets (session state), a <strong>Pink Slip</strong> for the last fatal complaint (an error backtrace), and an <strong>Inspector</strong> who arrives to test whether the hotel has really fixed its lock (the checker). They appear later. For now, all you need is Mira, the Blotter, and the Ledger.</p>
             <p class="refrain">The Ledger outlives the Blotter. Most of this story is what happens when someone forgets to erase a line.</p>
           </div>
 
@@ -791,10 +794,11 @@
 
           <div class="story">
             <div class="layer-tag">The story <span class="hint">ELI5 · continuity</span></div>
-            <p>Hotel Zend does not hire a new clerk for every guest. Hiring is slow, training is slower, and most of what Mira knows — the hotel layout, the phone numbers, the coffee machine — is useful for the next guest too.</p>
-            <p>So the hotel reuses her. At checkout she is supposed to do three things in order: <strong>file anything pending</strong>, <strong>erase every Ledger line that points at this guest's Blotter</strong>, and only then <strong>sweep the Blotter clean</strong>.</p>
-            <p>Most Ledger lines are harmless. “The front door code is 4411” does not point at the Blotter. But “the session folder is on page 12” does. If that line survives the sweep, the next guest can ask a question that sends Mira back to page 12 — a page that now belongs to somebody else, or to nobody at all.</p>
-            <p>In a busy hotel there are many Miras, so an attacker has to be lucky about which clerk gets the follow-up guest. In this lab there is exactly <strong>one</strong> Mira and <strong>KeepAlive Off</strong>, so the producer and consumer are guaranteed to meet the same process. The lab removes the race, not the bug.</p>
+            <p>Hotels do not hire a new clerk for every guest. Hiring takes time, training takes longer, and Mira already knows the building, the phone numbers, and where the coffee is. So the hotel keeps her and gives her the next guest too. In code, this is <strong>prefork</strong>: a small pool of worker processes, each one reused for request after request.</p>
+            <p>At checkout Mira is meant to do three things, always in this order. First, finish any pending paperwork, so nothing is left half-written. Second, erase every Ledger line that points at this guest's Blotter. Third, and only then, wipe the Blotter clean.</p>
+            <p>The order matters. If she wipes first, she can no longer tell which lines were safe to erase. A line like “the session folder is on page 12” does not become harmless after the wipe; it becomes <em>wrong</em>, while still looking perfectly readable.</p>
+            <p>Most Ledger lines are harmless. “The front door code is 4411” does not point at the Blotter. But “the session folder is on page 12” does. If that line is still there after the wipe, the next guest can send Mira back to page 12. She will read it, free it, or make a decision based on it, because nothing on the line says “expired.”</p>
+            <p>In a busy hotel there are many Miras, so an attacker has to be lucky about which clerk gets the follow-up guest. In this lab there is exactly <strong>one</strong> Mira and <strong>KeepAlive Off</strong>, so the guest who writes the line and the guest who reads it are guaranteed to meet the same process. The lab removes the race, not the bug.</p>
             <p class="refrain">The same clerk is the feature. The same clerk is the vulnerability.</p>
           </div>
 
@@ -895,10 +899,11 @@
 
           <div class="story">
             <div class="layer-tag">The story <span class="hint">ELI5 · continuity</span></div>
-            <p>A guest arrives with a crate. The front door has a rule: <strong>crates over 8 units are refused.</strong> But this crate has no label saying how big it is, and the rule only reads labels. So the guest is waved through.</p>
-            <p>At the desk, the crate keeps unfolding. Every form inside contains more forms. The paper is thin on the wire but thick once Mira has to lay it all out: names inside names inside names, thousands of empty file folders, each one needing a little cover sheet. The <strong>128-unit desk limit</strong> is reached while she is still unpacking.</p>
-            <p>Instead of saying “stop, I am out of room,” Mira <strong>faints</strong>. The hotel calls this a bailout. When she comes to, the cleanup crew has already swept the Blotter. But the Ledger still says <em>“session folder, page 12.”</em></p>
-            <p>At checkout she dutifully goes to page 12 and files what she finds there. The page is no longer hers. Depending on what the next guest left on it, she may file garbage, crash the hotel, or file something that says <em>run this.</em></p>
+            <p>A guest arrives with a crate. The front door has a rule: <strong>crates over 8 units are refused.</strong> But this crate has no label saying how big it is, and the rule only reads labels. So the guest is waved through. In code, this is a request without a usable <code>Content-Length</code>, so the <code>post_max_size</code> check has nothing to measure.</p>
+            <p>At the desk, the crate keeps unfolding. Every form inside contains more forms, and every folder contains another folder. The paper is thin in the crate but thick once Mira has to lay it all out: names inside names inside names, thousands of empty file folders, each one needing a little cover sheet, plus a few heavy binders for weight. On the wire it looked small. In memory it is enormous.</p>
+            <p>Mira keeps unpacking until she reaches the <strong>128-unit desk limit</strong>. A normal clerk would say “stop, I am out of room,” put the forms down, and finish tidying up. Mira instead <strong>faints</strong>. The hotel calls this a bailout: the work stops instantly and jumps straight to the end of the shift, skipping everything in between.</p>
+            <p>What it skips is the cleanup. The hotel calls the cleanup crew anyway, and the crew sweeps the Blotter clean. When Mira comes to, one Ledger line is still there: <em>“session folder, page 12.”</em> Mira does what the line says. She goes to page 12 and files whatever she finds there, because nobody ever erased the line.</p>
+            <p>Page 12 is no longer hers. The paper has been wiped and possibly reused. It may be blank. It may hold another guest's data. Or it may hold something shaped like a folder cover that says <em>“run this.”</em> Mira cannot tell the difference, because the line told her this page was still hers.</p>
             <p class="refrain">A faint is not a tidy checkout. The Blotter gets swept; the Ledger keeps its lines.</p>
           </div>
 
@@ -1001,7 +1006,7 @@ if (UNEXPECTED(allocation_failed())) {
           </div>
         </header>
 
-        <p class="sofar"><b>Story so far</b> The invariant: erase every Ledger line that points into the Blotter before the sweep. Chapter 3 interrupted the erasing. This chapter is the other half — erasing too early, or not at all.</p>
+        <p class="sofar"><b>Story so far</b> The invariant: erase every Ledger line that points into the Blotter before the sweep. Chapter 3 interrupted the erasing. This chapter is the other half: the line is erased and then written again, or it is never erased at all.</p>
 
         <article class="step">
           <div class="step-head">
@@ -1014,11 +1019,11 @@ if (UNEXPECTED(allocation_failed())) {
 
           <div class="story">
             <div class="layer-tag">The story <span class="hint">ELI5 · continuity</span></div>
-            <p>Mira has a rule for the Ledger: write in pencil, erase at checkout. Most nights it works. But there are two ways to get it wrong.</p>
-            <p><strong>Way one:</strong> a guest interrupts her before she erases. The hotel calls this a fatal error. She drops the pencil, the shift ends, and the line remains. The Blotter is swept anyway.</p>
-            <p><strong>Way two:</strong> she erases the line, and then a late complaint — a warning from the cleanup crew, an extension shutting down — writes a <em>new</em> line on the same page after the erasing. The page now describes the room that has just been cleared.</p>
-            <p>Either way, the next guest arrives before Mira has opened the desk for the day. The guest asks a small question — “what is my session name?”, “what does this setting mean?” — and the answer requires reading the Ledger. Mira trusts the old line. She reads, frees, or branches on a page that no longer belongs to her.</p>
-            <p>That is the whole shape: <strong>producer</strong>, <strong>free</strong>, <strong>consumer</strong>. The two guests do not need to know each other. They only need the same Mira.</p>
+            <p>Mira has a rule for the Ledger: write in pencil, erase at checkout. Most nights it works. But there are two ways to get it wrong, and they are worth keeping separate.</p>
+            <p><strong>Way one:</strong> a guest interrupts her before she erases. A form is malformed, a required page is missing, or she runs out of time. The hotel calls any of these a fatal error. She drops the pencil, the shift ends immediately, and the line remains exactly as it was. The Blotter is swept anyway, because the hotel never skips the sweep.</p>
+            <p><strong>Way two:</strong> she does erase the line, but then a late complaint arrives — a warning from the cleanup crew, an extension shutting down, a setting that was rejected. That complaint writes a <em>new</em> line in the same place, after the erasing is done. The notebook now describes the room that has just been cleared.</p>
+            <p>Either way, the next guest arrives before Mira has opened the desk for the day. The guest asks a small question — “what is my session name?”, “what does this setting mean?” — and the answer requires reading the Ledger. Mira trusts the old line. She reads, frees, or branches on a page that no longer belongs to her. The guest never has to break in; the clerk does the reading for them.</p>
+            <p>This is why the bug has two roles. A <strong>producer</strong> is a request that writes the line and does not clean it up. A <strong>consumer</strong> is a later request that reads the line before normal startup has replaced it. The two guests do not need to know each other. They only need the same Mira.</p>
             <p class="refrain">A producer writes the line. A consumer trusts it. The Blotter in between belongs to nobody.</p>
           </div>
 
@@ -1196,8 +1201,9 @@ ZVAL_UNDEF(&amp;EG(last_fatal_error_backtrace));
 
           <div class="story">
             <div class="layer-tag">The story <span class="hint">ELI5 · guest one</span></div>
-            <p>The first guest brings the crate with no label. The front door only checks labels, so it waves them through. At the desk the crate unfolds into hundreds of empty folders, each with a long name, plus a few heavy binders for weight.</p>
-            <p>Mira starts putting the session away, runs out of desk, and faints. When the cleanup crew sweeps the Blotter, two Ledger lines still point at it: the guest's <strong>session id</strong> and the <strong>session handler state</strong>. The lines now point at free paper.</p>
+            <p>The first guest brings the crate with no label. The front door only checks labels, so it waves them through. At the desk the crate unfolds into hundreds of empty folders, each with a long name, plus a few heavy binders for weight. Empty folders still take up shelf space, and nested names still have to be written out one by one.</p>
+            <p>Mira starts putting the session away, runs out of desk, and faints mid-task — while the session is still reachable. When the cleanup crew sweeps the Blotter, two Ledger lines still point at it: the guest's <strong>session id</strong> and the <strong>session handler state</strong>. In code these are <code>PS(id)</code> and <code>PS(mod_data)</code>. The lines now point at free paper.</p>
+            <p>Neither line is an exploit by itself. Both simply point at paper that has been wiped. Guest one does not steal anything; the guest leaves a note that says where to look. The next guest will do the looking.</p>
             <p class="refrain">Guest one does not steal anything. Guest one just leaves the door unlocked.</p>
           </div>
 
@@ -1238,8 +1244,9 @@ ZVAL_UNDEF(&amp;EG(last_fatal_error_backtrace));
           <div class="story">
             <div class="layer-tag">The story <span class="hint">ELI5 · guest two</span></div>
             <p>The next guest asks for their coat-check ticket. Mira opens the Ledger, finds the old session line, and trusts it. She walks to the page it names and starts copying what is written there onto the ticket.</p>
-            <p>She does not stop at the end of the guest's name, because the page says the name is much longer than it really is. She copies and copies — about eight hundred kilobytes of the back room — and hands the guest a very long ticket. The guest now knows where the library is and where the main hall is.</p>
-            <p>Nothing is broken yet. The guest has simply been told the addresses.</p>
+            <p>Normally she would stop at the end of the guest's name. But the page header says the name is much longer than it really is, and Mira believes the header. So she keeps copying — through the guest's name, through neighbouring pages, through about eight hundred kilobytes of the back room — and hands the guest a very long ticket.</p>
+            <p>To the guest, the ticket is just a cookie: <code>Set-Cookie: PHPSESSID=…</code>. To the attacker, it is a read of worker memory. Buried in it are addresses that reveal where the library and the main heap live.</p>
+            <p>Nothing is broken yet. The guest has simply been given the floor plan: where the library is, where the main hall is, and which shelf the next step needs. Those addresses were supposed to stay secret; ASLR is the hotel's attempt to keep them that way.</p>
             <p class="refrain">Guest two does not steal the hotel. Guest two reads the floor plan.</p>
           </div>
 
@@ -1318,8 +1325,8 @@ ZVAL_UNDEF(&amp;EG(last_fatal_error_backtrace));
 
           <div class="story">
             <div class="layer-tag">The story <span class="hint">ELI5 · guest three</span></div>
-            <p>After the coat-check trick, the front desk is a mess. The third guest does not need a huge crate. A smaller stack of forms is enough to make Mira faint again — just as she is holding the little verification slip that says “this session belongs to this guest.”</p>
-            <p>She drops the slip. The Blotter is swept. The slip is now a Ledger line pointing at a page that no longer exists. This is exactly the setup the next guest needs.</p>
+            <p>After the coat-check trick, the front desk is a mess. The third guest does not need a huge crate. A smaller stack of forms is enough to make Mira faint again — and the timing is the point. She faints right while she is holding the little verification slip that says “this session belongs to this guest.”</p>
+            <p>She drops the slip. The Blotter is swept. The slip is now a Ledger line pointing at a page that no longer exists. The trap from the first guest was consumed by the second guest's reading; the third guest simply sets a fresh one, on the same desk, for the next guest.</p>
             <p class="refrain">Guest three is not the thief. Guest three re-loads the trap.</p>
           </div>
 
@@ -1352,8 +1359,9 @@ ZVAL_UNDEF(&amp;EG(last_fatal_error_backtrace));
 
           <div class="story">
             <div class="layer-tag">The story <span class="hint">ELI5 · guest four</span></div>
-            <p>The last guest brings a cart of ordinary folders. Inside almost every one is the same tiny note: <em>“the important folder is in the main hall, at shelf S.”</em> Mira files them without reading closely.</p>
-            <p>One folder is different. Its cover is a perfect imitation of a folder cover, but the line that says <strong>“file this”</strong> has been replaced with <strong>“run this.”</strong> At closing, Mira picks up the dangling verification slip, follows it to shelf S, and files the folder. The action she thinks is “file” is actually “run the command on the label.”</p>
+            <p>The last guest brings a cart of ordinary folders. Inside almost every one is the same tiny note: <em>“the important folder is in the main hall, at shelf S.”</em> Mira files them without reading closely, which is exactly what a clerk is supposed to do.</p>
+            <p>One folder is different. Its cover is a perfect imitation of a folder cover — same size, same fields, same shape as every other cover. But the line that says <strong>“file this”</strong> has been replaced with <strong>“run this,”</strong> followed by a command. Mira has no reason to inspect the cover; covers are supposed to be boring.</p>
+            <p>At closing, Mira picks up the dangling verification slip from guest three. It points to shelf S. She follows it and files the folder. The action she thinks is “file” is actually “run the command on the label.”</p>
             <p>The command is <code>id</code>. The hotel does not fall down immediately; it prints the worker's identity, then the allocator notices the forged folder and the worker aborts. The point is made: the clerk ran the guest's label.</p>
             <p class="refrain">Guest four does not pick the lock. Guest four replaces the page that says what “filing” means.</p>
           </div>
@@ -1444,8 +1452,10 @@ offset 0x10 : val_type = 0x0107</code></pre>
 
           <div class="story">
             <div class="layer-tag">The story <span class="hint">ELI5 · continuity</span></div>
-            <p>When a guest makes a fatal complaint, Mira writes the details on a <strong>Pink Slip</strong> and keeps it under the desk mat. It is supposed to be destroyed at checkout. On 8.5.11 the fast checkout path skips that step. The mat is lifted, the Blotter is swept, and the Pink Slip stays.</p>
-            <p>The next morning, a guest fills in an invalid form. The hotel processes form complaints <em>before</em> it opens the desk for the day. The complaint handler starts by picking up whatever is on the Pink Slip. On 8.5.11 the slip points at the swept Blotter. Mira walks the old pages and files them again — a double free. The hotel aborts: <code>zend_mm_heap corrupted</code>.</p>
+            <p>When a guest makes a fatal complaint, Mira writes the details on a <strong>Pink Slip</strong> and keeps it under the desk mat. The slip is meant to help her finish the shift. It is supposed to be destroyed at checkout, before the mat is lifted and the Blotter is swept.</p>
+            <p>On 8.5.11 the fast checkout path skips that step. The mat is lifted, the Blotter is swept, and the Pink Slip stays where it is — still pointing at the old pages. Nothing about the slip looks broken. That is the problem.</p>
+            <p>The next morning, a guest fills in an invalid form. The hotel processes form complaints <em>before</em> it opens the desk for the day, because it needs those settings to set the desk up. The complaint handler starts by picking up whatever is on the Pink Slip.</p>
+            <p>On 8.5.11 the slip points at the swept Blotter. Mira walks the old pages and files them again — a double free. The allocator notices that the same block was released twice and aborts the worker: <code>zend_mm_heap corrupted</code>.</p>
             <p>On 8.5.12 the checkout code erases the slip without touching the dead page. The morning complaint finds a blank slip and moves on. Same guest, same form, no crash.</p>
             <p class="refrain">The Pink Slip is not a leak. It is a live pointer to a page that was already swept.</p>
           </div>
@@ -1548,8 +1558,9 @@ ZVAL_UNDEF(&amp;EG(last_fatal_error_backtrace));</code></pre>
 
           <div class="story">
             <div class="layer-tag">The story <span class="hint">ELI5 · the line between proof and exploit</span></div>
-            <p>To prove the Pink Slip could be dangerous, the lab temporarily gives Mira a <em>forged</em> Pink Slip. It is planted by the lab itself, not by a guest. When the morning complaint reads it, it says “run this” instead of “file this,” and the command runs.</p>
-            <p>This proves the filing action is powerful enough to run a command. It does <strong>not</strong> prove a guest can plant the slip. The lab can; a remote attacker cannot — yet.</p>
+            <p>To prove the Pink Slip could be dangerous, the lab temporarily gives Mira a <em>forged</em> Pink Slip. This is instrumented evidence, not an attack: the lab plants the slip itself, before the morning complaint is handled. A guest cannot do this; the lab can.</p>
+            <p>When the complaint handler reads the forged slip, it says “run this” instead of “file this,” and the command runs. That proves two things: the filing action is powerful enough to run code, and the payload layout is correct.</p>
+            <p>What it does <strong>not</strong> prove is that a guest can plant the slip. Planting requires controlled bytes at a precise spot in worker memory before startup. The lab can arrange that; a remote attacker cannot — yet. That gap is the difference between a proof of impact and a remote exploit.</p>
             <p class="refrain">A proof that the gun fires is not a proof that the attacker can reach the trigger.</p>
           </div>
 
@@ -1594,9 +1605,10 @@ ZVAL_UNDEF(&amp;EG(last_fatal_error_backtrace));</code></pre>
 
           <div class="story">
             <div class="layer-tag">The story <span class="hint">ELI5 · the lobby</span></div>
-            <p>FPM looks more promising because a guest can hand over a small folder cover <em>before</em> the desk opens. The cover is 56 bytes and the guest controls every byte. Surely that can become the forged Pink Slip?</p>
-            <p>Not quite. When the Blotter is swept, the cleaning crew rewinds to the <strong>front of the lobby</strong>. The guest's cover lands in slot 0. The Pink Slip from the previous guest is six slots back, next to five staff folders that only exist after the desk opens. The consumer runs before those folders are created, so it cannot walk far enough to reach slot 6.</p>
-            <p>It is the right key, on the right street, in the wrong lock. The guest can move the Pink Slip closer with a producer-side trick, but the two positions still do not meet.</p>
+            <p>FPM looks more promising because a guest can hand over a small folder cover <em>before</em> the desk opens. The cover is exactly 56 bytes and the guest controls every byte of it. It arrives as a Basic-auth username, before the hotel has done any normal setup. Surely that can become the forged Pink Slip?</p>
+            <p>Not quite. When the Blotter is swept, the cleaning crew rewinds all the way to the <strong>front of the lobby</strong> and starts handing out space from slot 0. The guest's cover lands in slot 0. The Pink Slip from the previous guest is six slots back, next to five staff folders that only exist after the desk opens.</p>
+            <p>Between slot 0 and the slip are those five staff folders: the symbol table, the included-files table, and three more structures created during normal desk setup. The complaint is handled <em>before</em> that setup, so the folders do not exist yet, and the handler cannot walk past them to reach slot 6.</p>
+            <p>The guest can move the Pink Slip closer with a producer-side trick, but only by one or two slots. It is still the right key, on the right street, in the wrong lock. Nothing is miscalibrated; the gap is the order in which the hotel opens.</p>
             <p class="refrain">The gap is not a calibration error. It is the order in which the hotel opens.</p>
           </div>
 
@@ -1695,9 +1707,10 @@ ZVAL_UNDEF(&amp;EG(last_fatal_error_backtrace));</code></pre>
 
           <div class="story">
             <div class="layer-tag">The story <span class="hint">ELI5 · continuity</span></div>
-            <p>The Inspector arrives at a hotel that claims to have fixed its lock. She does not start with the claim. She first goes to a hotel <strong>known to be vulnerable</strong> and tries the same four guests. If that hotel does not get robbed, her test is broken: wrong key, wrong guest list, wrong clerk. She writes <strong>INCONCLUSIVE</strong> and goes home.</p>
-            <p>Only if the control hotel is actually robbed does she try the candidate. Same guest list, same timing, same single clerk. If the candidate also gets robbed, the fix does not work. If the candidate stays safe <em>and healthy</em>, the fix is verified.</p>
-            <p>She also runs a second control for the 8.5 path: the same vulnerable hotel with the Pink Slip disabled. If it still crashes, the crash is not the Pink Slip's fault, and the test is inconclusive.</p>
+            <p>The Inspector arrives at a hotel that claims to have fixed its lock. She does not take the hotel's word for it, and she does not start with the candidate. She starts with a <strong>control</strong>: a hotel known to be vulnerable.</p>
+            <p>She sends the same four guests to the control, with the same timing and the same single clerk. If the control hotel is not robbed, her test is broken — wrong key, wrong guest list, wrong clerk, wrong container, or simply a timeout. She writes <strong>INCONCLUSIVE</strong> and goes home. She does not call the candidate fixed just because it was quiet.</p>
+            <p>Only if the control hotel is actually robbed does she try the candidate. Same guest list, same timing, same single clerk. If the candidate is also robbed, the fix does not work. If the candidate stays safe <em>and healthy</em>, the fix is verified.</p>
+            <p>She also runs a second control for the 8.5 path: the same vulnerable hotel with the Pink Slip disabled. If it still crashes, the crash is not the Pink Slip's fault, and the test is inconclusive. That is how she proves the crash belongs to this bug, not to a broken image.</p>
             <p class="refrain">A “patched” verdict is only as strong as the control that reproduced the bug.</p>
           </div>
 
@@ -1840,11 +1853,11 @@ uv run php2shell-check backtrace \
 
           <div class="story">
             <div class="layer-tag">The story <span class="hint">ELI5 · continuity</span></div>
-            <p>The hotel posts three rules in the staff room.</p>
+            <p>The hotel posts three rules in the staff room, plus one quieter note for the people who build the desk. Each rule removes a different part of the failure, and together they replace the old checkout policy rather than patching one function.</p>
             <p><strong>Rule one: erase the line before you sweep.</strong> Every Ledger line that points at the Blotter must be cleared before the Blotter is wiped. If the sweep has already happened, clear the line anyway — do not touch the dead page. This is the 8.5 <code>ZVAL_UNDEF</code>: the Pink Slip is crossed out without being filed.</p>
-            <p><strong>Rule two: do not faint.</strong> Running out of desk is a normal event, not an emergency exit. Stop at the next safe checkpoint, record “out of memory” in the Ledger, and let the normal path finish cleaning up. This is the soft OOM: deferred to a VM safe point instead of a <code>longjmp()</code>.</p>
-            <p><strong>Rule three: if the second alarm rings, close the hotel immediately.</strong> If memory use crosses a second, higher threshold, do not try to be graceful. Shut the process down with <code>_exit()</code> so no shutdown handler can walk invalid state. This is the hard OOM.</p>
-            <p><strong>And a fourth, quieter rule:</strong> if an allocation can fail, let the caller decide. Do not turn every failure into a jump. That is the fallible-allocation API.</p>
+            <p><strong>Rule two: do not faint.</strong> Running out of desk is a normal event, not an emergency exit. Stop at the next safe checkpoint, record “out of memory” in the Ledger, and let the normal path finish cleaning up. Cleanup gets to finish, and the request fails without abandoning its own state. This is the soft OOM: deferred to a VM safe point instead of a <code>longjmp()</code>.</p>
+            <p><strong>Rule three: if the second alarm rings, close the hotel immediately.</strong> If memory use crosses a second, higher threshold, do not try to be graceful. Shut the process down with <code>_exit()</code> so no shutdown handler can walk invalid state. Losing one worker is cheaper than letting it file from a dead page. This is the hard OOM.</p>
+            <p><strong>And a fourth, quieter rule:</strong> if an allocation can fail, let the caller decide. Do not turn every failure into a jump. The caller can free partial work and return an error through the normal path. That is the fallible-allocation API.</p>
             <p class="refrain">The fix is a policy: no jumps through cleanup, no shutdown on invalid state, no stale lines.</p>
           </div>
 
@@ -1932,8 +1945,9 @@ ZVAL_UNDEF(&amp;EG(last_fatal_error_backtrace));</code></pre>
 
           <div class="story">
             <div class="layer-tag">The story <span class="hint">ELI5 · continuity</span></div>
-            <p>Suppose the hotel cannot replace its checkout procedure yet. It can still make the attack harder: refuse unlabeled crates at the front door, limit how many folders a guest may bring, keep the desk smaller, remove the Pink Slip entirely, and close each clerk's shift after one guest.</p>
-            <p>None of these is the same as fixing the checkout. They remove routes to the bad page; they do not make the page safe. The hotel should still schedule the real repair.</p>
+            <p>Suppose the hotel cannot replace its checkout procedure yet. It can still make the attack harder, even if it cannot make the desk safe.</p>
+            <p>It can refuse unlabeled crates at the front door, by measuring the decoded body instead of trusting a label. It can limit how many folders a guest may bring, and how deeply folders may nest. It can keep the desk smaller, so there is less room to unfold a crate. It can remove the Pink Slip entirely. And it can give each clerk a fresh shift after every guest, so no line survives to be read.</p>
+            <p>None of these is the same as fixing the checkout. Each one closes a route to the bad page, but the page is still bad. A determined guest may find another route, and the hotel should still schedule the real repair.</p>
             <p class="refrain">Mitigations buy time. They do not erase the line.</p>
           </div>
 
