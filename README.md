@@ -184,6 +184,8 @@ Full details:
   mod_php Phase 0/1
 - [`references/8.5-fpm-instrumentation.md`](references/8.5-fpm-instrumentation.md) —
   FPM pivot
+- [`writeup/index.html`](writeup/index.html) — self-contained, nine-page
+  interactive field guide with a continuous allegory and step simulations
 
 The validated 8.4 RCE chain and the 8.5 crash oracle remain the supported
 checks. The research backlog is tracked in
