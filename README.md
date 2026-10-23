@@ -191,6 +191,13 @@ The validated 8.4 RCE chain and the 8.5 crash oracle remain the supported
 checks. The research backlog is tracked in
 [`TODO-8.5-RCE.md`](TODO-8.5-RCE.md).
 
+### Publishing the writeup
+
+`writeup/index.html` is a self-contained static page with hash routing; it does
+not need a build step. On Cloudflare Pages, set the build output directory to
+`writeup` and leave the build command empty. [`writeup/_headers`](writeup/_headers)
+adds baseline security headers for Pages and Workers static assets.
+
 ## Manual lab
 
 ```bash
@@ -222,3 +229,12 @@ See `references/` for the advisories, fix commit, and provenance notes.
 - The proof command is `id`; there is no reverse shell or persistence.
 - The exploit traffic intentionally crashes or corrupts the worker. Do not run
   it against shared or production services.
+
+## License
+
+Released under the [MIT License](LICENSE). See [`NOTICE`](NOTICE) for upstream
+attribution and the responsible-use notice.
+
+## Imprint
+
+<https://totallylegit.zip/dev/null/imprint>

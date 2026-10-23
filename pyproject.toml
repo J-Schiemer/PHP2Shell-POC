@@ -3,8 +3,15 @@ name = "php2shell-check"
 version = "0.1.0"
 description = "Differential checker for the PHP2Shell (CVE-2026-109618/109619) mod_php fixes"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.11"
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/J-Schiemer/PHP2Shell-POC"
+Repository = "https://github.com/J-Schiemer/PHP2Shell-POC"
+Imprint = "https://totallylegit.zip/dev/null/imprint"
 
 [project.scripts]
 php2shell-check = "php2shell_check.cli:main"

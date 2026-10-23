@@ -1,0 +1,47 @@
+PHP2Shell fix checker
+Copyright (c) 2026 Johannes Schiemer
+
+This project is released under the MIT License. See the LICENSE file.
+
+Third-party attribution
+-----------------------
+
+The wire-level request shapes and heap calibration used by this project are
+based on the public research proof of concept:
+
+  9bie/php2shell-bypass-aslr-exp
+  https://github.com/9bie/php2shell-bypass-aslr-exp
+  commit 17e98ee81025cccfd94b4f9c9a17bf269c65ff75
+
+No upstream code or data is vendored in this repository. The upstream
+repository did not contain a license file at the referenced commit, so it is
+cited for provenance and comparison only.
+
+This project also references the following upstream materials:
+
+  GHSA-w8hw-w9fx-j79w (CVE-2026-109618)
+  GHSA-6wmf-4rv5-p3rp (CVE-2026-109619)
+  php-src fix commit 3584a98bda0f2c0d367255b046798b0d3a221a19
+
+Those materials remain the property of their respective authors. They are not
+included here except as short quotations, summaries, and links.
+
+Responsible use notice
+----------------------
+
+This repository is a security research and defensive verification harness. It
+contains exploit primitives that are intended to run only against local Docker
+containers you own and control. Do not use it against systems or networks
+without explicit written authorization. The proof command is `id`; the project
+does not include a reverse shell, persistence, or data-exfiltration payload.
+
+The software is provided "as is", without warranty of any kind, express or
+implied. The authors are not responsible for misuse, damage, or legal
+consequences arising from its use. You are responsible for complying with the
+laws and policies that apply to you.
+
+PHP is a trademark of The PHP Group. This project is not affiliated with or
+endorsed by The PHP Group, the PHP development team, or the authors of the
+referenced upstream research.
+
+Imprint: https://totallylegit.zip/dev/null/imprint
