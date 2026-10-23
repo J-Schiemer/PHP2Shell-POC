@@ -1,0 +1,31 @@
+# Lab-only PHP 8.5 debug/inspection image for the fatal-backtrace path.
+# Never deploy: it contains gdb and an extension that walks freed request memory.
+#
+# Build with buildx (forces amd64 even on an arm64 host):
+#   docker buildx build --platform linux/amd64 \
+#     -f docker/Dockerfile.85-debug -t php2shell:8.5.11-debug .
+#
+# This Docker install has no buildx and its legacy builder ignores --platform,
+# so the checked-in images were built with research/build_85_debug.sh instead
+# (amd64 container + docker commit). See references/8.5-rce-instrumentation.md.
+ARG BASE_IMAGE=php:8.5.11-apache@sha256:47e6d8849049375e0d19e81f1b391ed88828d4653e0d1b00822185b66b564e8b
+FROM --platform=linux/amd64 ${BASE_IMAGE}
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gdb procps \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY research/85probe /usr/src/php/ext/p2s85probe
+RUN cd /usr/src/php/ext/p2s85probe \
+    && phpize \
+    && ./configure --enable-p2s85probe \
+    && make -j"$(nproc)" \
+    && make install
+
+RUN gcc -shared -fPIC -O2 -Wall \
+        -o /usr/local/lib/p2s85-preload.so \
+        /usr/src/php/ext/p2s85probe/p2s85-preload.c -ldl \
+    && rm -rf /usr/src/php/ext/p2s85probe
+
+RUN printf 'extension=p2s85probe.so\n' > /usr/local/etc/php/conf.d/zz-p2s85probe.ini
+ENV P2S85_LOG=/out/p2s85-probe.log

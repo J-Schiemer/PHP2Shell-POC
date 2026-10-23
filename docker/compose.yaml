@@ -1,0 +1,67 @@
+name: php2shell-lab
+
+x-target: &target
+  platform: linux/amd64
+  mem_limit: 1g
+  cpus: 2
+  security_opt:
+    - no-new-privileges:true
+  restart: "no"
+  command:
+    - /bin/sh
+    - -c
+    - >-
+      cp /usr/local/etc/php/php.ini-production /usr/local/etc/php/php.ini;
+      chown -R www-data:www-data /out;
+      exec apache2-foreground
+
+services:
+  vuln84:
+    <<: *target
+    image: php:8.4.26-apache@sha256:60111400ff77bdc44fa79b4f072afe49a42abba71e0846ad496be4761dc9c11a
+    profiles: ["vuln84"]
+    container_name: php2shell-vuln84
+    ports: ["127.0.0.1:18080:80"]
+    volumes:
+      - ./www:/var/www/html:ro
+      - ./apache-single.conf:/etc/apache2/conf-enabled/zz-p2s.conf:ro
+      - ./php-lab.ini:/usr/local/etc/php/conf.d/zz-lab.ini:ro
+      - ../out/compose/vuln84:/out
+
+  fixed84:
+    <<: *target
+    image: php:8.4.27-apache@sha256:a0b75cee7023ba2c127138dcad2ecc6ec7e09435534645e70450f29f24ea2a5a
+    profiles: ["fixed84"]
+    container_name: php2shell-fixed84
+    ports: ["127.0.0.1:18081:80"]
+    volumes:
+      - ./www:/var/www/html:ro
+      - ./apache-single.conf:/etc/apache2/conf-enabled/zz-p2s.conf:ro
+      - ./php-lab.ini:/usr/local/etc/php/conf.d/zz-lab.ini:ro
+      - ../out/compose/fixed84:/out
+
+  vuln85:
+    <<: *target
+    image: php:8.5.11-apache@sha256:47e6d8849049375e0d19e81f1b391ed88828d4653e0d1b00822185b66b564e8b
+    profiles: ["vuln85"]
+    container_name: php2shell-vuln85
+    ports: ["127.0.0.1:18082:80"]
+    volumes:
+      - ./www:/var/www/html:ro
+      - ./apache-single.conf:/etc/apache2/conf-enabled/zz-p2s.conf:ro
+      - ./php-lab.ini:/usr/local/etc/php/conf.d/zz-lab.ini:ro
+      - ./php-85.ini:/usr/local/etc/php/conf.d/zz-85.ini:ro
+      - ../out/compose/vuln85:/out
+
+  fixed85:
+    <<: *target
+    image: php:8.5.12-apache@sha256:e25ab14ef2cfec3bab9dd66c6cf871691146f428fbd72241b1a2c38fcacf92f5
+    profiles: ["fixed85"]
+    container_name: php2shell-fixed85
+    ports: ["127.0.0.1:18083:80"]
+    volumes:
+      - ./www:/var/www/html:ro
+      - ./apache-single.conf:/etc/apache2/conf-enabled/zz-p2s.conf:ro
+      - ./php-lab.ini:/usr/local/etc/php/conf.d/zz-lab.ini:ro
+      - ./php-85.ini:/usr/local/etc/php/conf.d/zz-85.ini:ro
+      - ../out/compose/fixed85:/out
